@@ -45,5 +45,11 @@ class InvestigationComplete(BaseModel):
     findings: str
     status: str = "completed"
 
+class AdjudicateRequest(BaseModel):
+    settled_on: date | None = None
+
+class SettlementRecordCreate(BaseModel):
+    settled_on: date
+
 class ThresholdUpdate(BaseModel):
     threshold: float = Field(gt=0, lt=1)

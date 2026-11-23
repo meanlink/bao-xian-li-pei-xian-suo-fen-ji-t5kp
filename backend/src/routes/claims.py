@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from src.schemas.claims import ClaimCreate, DocumentVerify, InvestigationCreate, InvestigationComplete
+from src.schemas.claims import AdjudicateRequest, ClaimCreate, DocumentVerify, InvestigationCreate, InvestigationComplete
 from src.services.claim_service import list_claims, get_claim, verify_documents, model_claim, assign_task, complete_task, adjudicate, get_clues, get_tasks
 from src.services.clue_review_service import unresolved_review_count
 from src.services.document_triage_service import TRIAGE_ROLES, latest_followup
@@ -35,7 +35,13 @@ def claim_detail(claim_id: int, user=Depends(current_user)):
     with get_conn() as conn:
         unresolved_reviews = unresolved_review_count(conn, claim_id)
         followup = latest_followup(conn, claim_id) if user["role"] in TRIAGE_ROLES else None
-    return {"claim": item, "clues": get_clues(claim_id), "tasks": [task for task in get_tasks() if task["claim_id"] == claim_id], "unresolved_clue_reviews": unresolved_reviews, "document_followup": followup}
+        settlement = conn.execute(
+            """SELECT s.settled_on, s.loss_amount, s.recorded_at, u.display_name AS recorded_by_name
+               FROM settlement_records s LEFT JOIN users u ON u.id = s.recorded_by
+               WHERE s.claim_id = %s""",
+            (claim_id,),
+        ).fetchone()
+    return {"claim": item, "clues": get_clues(claim_id), "tasks": [task for task in get_tasks() if task["claim_id"] == claim_id], "unresolved_clue_reviews": unresolved_reviews, "document_followup": followup, "settlement": dict(settlement) if settlement else None}
 
 @router.post("/claims/{claim_id}/verify-documents")
 def verify(claim_id: int, payload: DocumentVerify, user=Depends(require_roles("intake_agent", "risk_manager"))):
@@ -58,8 +64,8 @@ def complete(task_id: int, payload: InvestigationComplete, user=Depends(require_
     except Exception as exc: fail(exc)
 
 @router.post("/claims/{claim_id}/adjudicate")
-def close_claim(claim_id: int, user=Depends(require_roles("risk_manager"))):
-    try: return adjudicate(claim_id, user["id"])
+def close_claim(claim_id: int, payload: AdjudicateRequest | None = None, user=Depends(require_roles("risk_manager"))):
+    try: return adjudicate(claim_id, user["id"], payload.settled_on if payload else None)
     except Exception as exc: fail(exc)
 
 @router.get("/risk-clues")

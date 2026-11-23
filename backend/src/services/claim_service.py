@@ -2,7 +2,8 @@ import json
 from datetime import date
 from src.services.logistic_model import score_claim, confusion_matrix, choose_threshold
 from src.services.clue_review_service import unresolved_review_count
-from src.services.document_triage_service import INTAKE_STATES, complete_followup, missing_documents
+from src.services.document_triage_service import INTAKE_STATES, business_date, complete_followup, missing_documents
+from src.services.monthly_report_service import insert_settlement_record
 from src.utils.audit import record, record_in_transaction
 from src.utils.db import get_conn
 from src.utils.redis_client import publish_event
@@ -99,9 +100,9 @@ def complete_task(task_id, payload, user_id):
     record(user_id, "investigation_completed", task["claim_id"], {"task_id": task_id})
     return dict(row)
 
-def adjudicate(claim_id, user_id):
+def adjudicate(claim_id, user_id, settled_on=None):
     with get_conn() as conn:
-        claim = conn.execute("SELECT status FROM claims WHERE id=%s FOR UPDATE", (claim_id,)).fetchone()
+        claim = conn.execute("SELECT * FROM claims WHERE id=%s FOR UPDATE", (claim_id,)).fetchone()
         if not claim:
             raise ValueError("案件不存在")
         if claim["status"] != "adjudicating":
@@ -111,8 +112,12 @@ def adjudicate(claim_id, user_id):
             raise PermissionError("仍有未完成的调查任务")
         if unresolved_review_count(conn, claim_id):
             raise PermissionError("仍有待复核或待补正的线索证据，不能核赔结案")
+        settled = settled_on or business_date(conn)
+        if settled > business_date(conn):
+            raise ValueError("核赔日不能晚于当前工作日")
         row = conn.execute("UPDATE claims SET status='closed', updated_at=now() WHERE id=%s RETURNING *", (claim_id,)).fetchone()
-        record_in_transaction(conn, user_id, "claim_adjudicated", claim_id, {"result": "closed"})
+        insert_settlement_record(conn, claim, settled, user_id)
+        record_in_transaction(conn, user_id, "claim_adjudicated", claim_id, {"result": "closed", "settled_on": settled.isoformat()})
     return row_claim(row)
 
 def threshold_check(new_threshold, user_id):

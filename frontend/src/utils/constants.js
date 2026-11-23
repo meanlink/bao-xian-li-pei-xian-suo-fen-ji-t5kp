@@ -12,3 +12,8 @@ export const clueEvidenceSource = {official_record:'官方记录', original_medi
 export const clueReviewClaimStatuses = ['investigating', 'adjudicating'];
 
 export function canTriage(role){return role === 'intake_agent' || role === 'risk_manager'}
+
+export const reportStatus = {open:'未冻结', frozen:'已冻结'};
+export const entryKind = {current:'当月结案', carry:'差额结转'};
+export function monthText(value){const [year, month] = String(value).slice(0,7).split('-');return `${year}年${Number(month)}月`}
+export function todayText(){const now = new Date();return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`}

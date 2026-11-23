@@ -15,6 +15,8 @@ claims = [
     ("CLM-261103-0003", "PA-2026-0031", "孙立诚", "水灾", date(2026,11,3), Decimal("236000"), "沿海", "13800003333", ["身份证明","事故证明","损失清单"], ["身份证明","事故证明","损失清单"], [], "complete", "initial_review", None, True),
     ("CLM-261104-0004", "PA-2026-0045", "周婉清", "医疗", date(2026,11,4), Decimal("42000"), "山区", "13800004444", ["身份证明","事故证明","损失清单"], ["身份证明","事故证明","损失清单"], [], "complete", "modeled", 0.61, False),
     ("CLM-261105-0005", "PA-2026-0052", "何志远", "火灾", date(2026,11,5), Decimal("510000"), "园区", "13800005555", ["身份证明","事故证明","损失清单"], ["身份证明","事故证明","损失清单"], [], "complete", "investigating", 0.86, True),
+    ("CLM-261020-0006", "PA-2026-0049", "郑北望", "车损", date(2026,10,20), Decimal("75000"), "都市", "13800007777", ["身份证明","事故证明","损失清单"], ["身份证明","事故证明","损失清单"], [], "complete", "closed", 0.34, False),
+    ("CLM-261025-0007", "PA-2026-0058", "孟繁启", "医疗", date(2026,10,25), Decimal("54000"), "山区", "13800008888", ["身份证明","事故证明","损失清单"], ["身份证明","事故证明","损失清单"], [], "complete", "closed", 0.42, False),
 ]
 
 with get_conn() as conn:
@@ -39,4 +41,6 @@ with get_conn() as conn:
             conn.execute("INSERT INTO investigation_tasks(claim_id,assignee,priority,status,due_date,scope) SELECT %s,'陈默','urgent','assigned',%s,'核对现场照片 EXIF、维修厂报价单与气象站记录' WHERE NOT EXISTS (SELECT 1 FROM investigation_tasks WHERE claim_id=%s)", (claim_id, date.today()+timedelta(days=2), claim_id))
         if claim_no == "CLM-261104-0004":
             conn.execute("INSERT INTO risk_clues(claim_id,clue_type,severity,description,evidence,status,created_by) SELECT %s,'历史频繁出险','medium','近 12 个月同类报案 3 次','保单 PA-2026-0045 历史赔案索引','open',id FROM users WHERE username='manager@claims.local' AND NOT EXISTS (SELECT 1 FROM risk_clues WHERE claim_id=%s AND clue_type='历史频繁出险')", (claim_id, claim_id))
+        if claim_no == "CLM-261020-0006":
+            conn.execute("INSERT INTO settlement_records(claim_id,settled_on,loss_amount,recorded_by) SELECT %s,%s,%s,id FROM users WHERE username='manager@claims.local' ON CONFLICT(claim_id) DO NOTHING", (claim_id, date(2026,10,28), Decimal("75000")))
 print('seed_demo completed idempotently')
