@@ -1,0 +1,94 @@
+name: claim-lead-classification
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-claim-lead-classification}-db
+    environment:
+      POSTGRES_DB: claims
+      POSTGRES_USER: claims
+      POSTGRES_PASSWORD: claims
+    ports:
+      - "${DB_PORT:-17744}:5432"
+    volumes:
+      - claim_lead_db:/var/lib/postgresql/data
+      - ./backend/migrations/001_schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U claims -d claims"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-claim-lead-classification}-redis
+    ports:
+      - "${REDIS_PORT:-16344}:6379"
+    volumes:
+      - claim_lead_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    container_name: ${COMPOSE_PROJECT_NAME:-claim-lead-classification}-backend
+    environment:
+      DATABASE_URL: postgresql://claims:claims@db:5432/claims
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: claim-lead-classification-demo-secret
+      CORS_ORIGINS: http://localhost:${FRONTEND_PORT:-18244}
+    ports:
+      - "${BACKEND_PORT:-19244}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - claim_lead_runtime:/app/runtime
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    build: ./backend
+    container_name: ${COMPOSE_PROJECT_NAME:-claim-lead-classification}-worker
+    command: ["python", "-m", "src.worker"]
+    environment:
+      DATABASE_URL: postgresql://claims:claims@db:5432/claims
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - claim_lead_runtime:/app/runtime
+    healthcheck:
+      test: ["CMD", "python", "-c", "from pathlib import Path; import time; p=Path('/app/runtime/worker-heartbeat.txt'); assert p.exists() and time.time()-p.stat().st_mtime < 30"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    build: ./frontend
+    container_name: ${COMPOSE_PROJECT_NAME:-claim-lead-classification}-frontend
+    ports:
+      - "${FRONTEND_PORT:-18244}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  claim_lead_db:
+  claim_lead_redis:
+  claim_lead_runtime:
